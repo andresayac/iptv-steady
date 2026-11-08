@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="960" height="440" role="img" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title>How IPTV Steady sits between players and accounts</title>
+<desc>Players connect to one IPTV Steady server. It reads ahead, watches every read, resumes at the exact byte and switches to another account that holds an identical copy when one account stops sending.</desc>
+<rect x="0.5" y="0.5" width="959" height="439" rx="14" fill="#1a1a19" stroke="#2f2f2c"/>
+<text x="40.0" y="62.0" font-size="15" font-weight="600" fill="#c3c2b7" text-anchor="start">Your players</text>
+<text x="750.0" y="62.0" font-size="15" font-weight="600" fill="#c3c2b7" text-anchor="start">Your accounts</text>
+<rect x="40" y="96" width="170" height="58" rx="10" fill="#232321" stroke="none"/>
+<text x="125.0" y="131.0" font-size="15.5" font-weight="600" fill="#f0efec" text-anchor="middle">TV box</text>
+<rect x="40" y="176" width="170" height="58" rx="10" fill="#232321" stroke="none"/>
+<text x="125.0" y="211.0" font-size="15.5" font-weight="600" fill="#f0efec" text-anchor="middle">Phone</text>
+<rect x="40" y="256" width="170" height="58" rx="10" fill="#232321" stroke="none"/>
+<text x="125.0" y="291.0" font-size="15.5" font-weight="600" fill="#f0efec" text-anchor="middle">Laptop</text>
+<rect x="750" y="96" width="170" height="58" rx="10" fill="#232321" stroke="none"/>
+<text x="768.0" y="121.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Account A</text>
+<text x="786.0" y="141.0" font-size="13" font-weight="400" fill="#c3c2b7" text-anchor="start">Stopped sending</text>
+<line x1="771.0" y1="132.0" x2="779.0" y2="140.0" stroke="#d03b3b" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="771.0" y1="140.0" x2="779.0" y2="132.0" stroke="#d03b3b" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="750" y="176" width="170" height="58" rx="10" fill="#232321" stroke="none"/>
+<text x="768.0" y="201.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Account B</text>
+<text x="786.0" y="221.0" font-size="13" font-weight="400" fill="#c3c2b7" text-anchor="start">Has the same file</text>
+<path d="M770 217 l3.5 4 l6.5 -8" fill="none" stroke="#0ca30c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="750" y="256" width="170" height="58" rx="10" fill="#232321" stroke="none"/>
+<text x="768.0" y="281.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Account C</text>
+<text x="768.0" y="301.0" font-size="13" font-weight="400" fill="#c3c2b7" text-anchor="start">On standby</text>
+<rect x="300" y="40" width="360" height="360" rx="14" fill="#232321" stroke="#3987e5"/>
+<text x="322.0" y="80.0" font-size="23" font-weight="650" fill="#f0efec" text-anchor="start">IPTV Steady</text>
+<text x="322.0" y="104.0" font-size="14" font-weight="400" fill="#c3c2b7" text-anchor="start">One server and one login for every player</text>
+<circle cx="329.0" cy="137.0" r="4" fill="#3987e5" stroke="#232321" stroke-width="2"/>
+<text x="344.0" y="142.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Reads ahead of the player</text>
+<text x="344.0" y="162.0" font-size="13.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Up to 64 MiB per movie, in memory</text>
+<circle cx="329.0" cy="187.0" r="4" fill="#3987e5" stroke="#232321" stroke-width="2"/>
+<text x="344.0" y="192.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Watches every read</text>
+<text x="344.0" y="212.0" font-size="13.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Silence or a crawl triggers a repair</text>
+<circle cx="329.0" cy="237.0" r="4" fill="#3987e5" stroke="#232321" stroke-width="2"/>
+<text x="344.0" y="242.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Resumes at the exact byte</text>
+<text x="344.0" y="262.0" font-size="13.5" font-weight="400" fill="#c3c2b7" text-anchor="start">The player keeps using its buffer</text>
+<circle cx="329.0" cy="287.0" r="4" fill="#3987e5" stroke="#232321" stroke-width="2"/>
+<text x="344.0" y="292.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Switches account when it must</text>
+<text x="344.0" y="312.0" font-size="13.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Only to a byte-identical copy</text>
+<circle cx="329.0" cy="337.0" r="4" fill="#3987e5" stroke="#232321" stroke-width="2"/>
+<text x="344.0" y="342.0" font-size="15" font-weight="600" fill="#f0efec" text-anchor="start">Serves one clean catalog</text>
+<text x="344.0" y="362.0" font-size="13.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Duplicates merged, lists from memory</text>
+<line x1="660.0" y1="125.0" x2="750.0" y2="125.0" stroke="#4a4a46" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="700.0" y1="120.0" x2="710.0" y2="130.0" stroke="#d03b3b" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="700.0" y1="130.0" x2="710.0" y2="120.0" stroke="#d03b3b" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="750.0" y1="205.0" x2="667.0" y2="205.0" stroke="#3987e5" stroke-width="2" stroke-linecap="round"/>
+<path d="M660 205 l9 -5 v10 z" fill="#3987e5"/>
+<text x="705.0" y="196.0" font-size="13" font-weight="400" fill="#c3c2b7" text-anchor="middle">video</text>
+<line x1="660.0" y1="285.0" x2="750.0" y2="285.0" stroke="#4a4a46" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="300.0" y1="125.0" x2="217.0" y2="125.0" stroke="#3987e5" stroke-width="2" stroke-linecap="round"/>
+<path d="M210 125 l9 -5 v10 z" fill="#3987e5"/>
+<line x1="300.0" y1="205.0" x2="217.0" y2="205.0" stroke="#3987e5" stroke-width="2" stroke-linecap="round"/>
+<path d="M210 205 l9 -5 v10 z" fill="#3987e5"/>
+<line x1="300.0" y1="285.0" x2="217.0" y2="285.0" stroke="#3987e5" stroke-width="2" stroke-linecap="round"/>
+<path d="M210 285 l9 -5 v10 z" fill="#3987e5"/>
+<text x="255.0" y="196.0" font-size="13" font-weight="400" fill="#c3c2b7" text-anchor="middle">video</text>
+</svg>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 412" width="960" height="412" role="img" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title>Measured results</title>
+<desc>Six measured results: resumed in 0.8 seconds with identical bytes, longest viewer wait of 0.12 seconds, resumed in 2.2 seconds on expiring links, a 2.1 MB movie list instead of 60 MB, 38,188 unique movies out of 111,027 entries, and offline channels reported in 1 to 1.6 seconds instead of 20.</desc>
+<rect x="0.5" y="0.5" width="959" height="411" rx="14" fill="#fcfcfb" stroke="#e7e6e0"/>
+<text x="32.0" y="46.0" font-size="16.5" font-weight="600" fill="#0b0b0b" text-anchor="start">Real providers, with faults injected on purpose</text>
+<rect x="32" y="64" width="288" height="128" rx="10" fill="#f3f3ef" stroke="none"/>
+<text x="50.0" y="116.0" font-size="38" font-weight="650" fill="#0b0b0b" text-anchor="start">0.8 s</text>
+<text x="50.0" y="148.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">Provider went silent, then cut the</text>
+<text x="50.0" y="169.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">connection. Resumed, identical bytes.</text>
+<rect x="336" y="64" width="288" height="128" rx="10" fill="#f3f3ef" stroke="none"/>
+<text x="354.0" y="116.0" font-size="38" font-weight="650" fill="#0b0b0b" text-anchor="start">0.12 s</text>
+<text x="354.0" y="148.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">Longest wait for a viewer</text>
+<text x="354.0" y="169.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">at a 4 Mbps playback pace.</text>
+<rect x="640" y="64" width="288" height="128" rx="10" fill="#f3f3ef" stroke="none"/>
+<text x="658.0" y="116.0" font-size="38" font-weight="650" fill="#0b0b0b" text-anchor="start">2.2 s</text>
+<text x="658.0" y="148.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">To resume on a provider</text>
+<text x="658.0" y="169.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">whose links expire.</text>
+<text x="32.0" y="236.0" font-size="16.5" font-weight="600" fill="#0b0b0b" text-anchor="start">One real setup with 4 accounts</text>
+<rect x="32" y="254" width="288" height="128" rx="10" fill="#f3f3ef" stroke="none"/>
+<text x="50.0" y="306.0" font-size="38" font-weight="650" fill="#0b0b0b" text-anchor="start">2.1 MB</text>
+<text x="50.0" y="338.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">Movie list sent to the player.</text>
+<text x="50.0" y="359.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">A previous proxy sent 60 MB.</text>
+<rect x="336" y="254" width="288" height="128" rx="10" fill="#f3f3ef" stroke="none"/>
+<text x="354.0" y="306.0" font-size="38" font-weight="650" fill="#0b0b0b" text-anchor="start">38,188</text>
+<text x="354.0" y="338.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">Unique movies out of 111,027</text>
+<text x="354.0" y="359.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">entries across the accounts.</text>
+<rect x="640" y="254" width="288" height="128" rx="10" fill="#f3f3ef" stroke="none"/>
+<text x="658.0" y="306.0" font-size="38" font-weight="650" fill="#0b0b0b" text-anchor="start">1 to 1.6 s</text>
+<text x="658.0" y="338.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">To report an offline channel.</text>
+<text x="658.0" y="359.0" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">It used to take 20 s.</text>
+</svg>
