@@ -1,0 +1,201 @@
+# Behavior lives here; secrets live in .env and are referenced as ${NAME}.
+
+server:
+  listen: ${LISTEN}
+  public_url: ${PUBLIC_URL}
+  read_header_timeout: 15s
+  idle_timeout: 120s
+  shutdown_timeout: 5s
+
+data_dir: data
+
+users:
+  - username: ${PROXY_USER}
+    password: ${PROXY_PASSWORD}
+    max_connections: 5
+
+# Listed in order of preference.
+accounts:
+  - name: provider-one
+    url: ${PROVIDER_ONE_URL}
+    username: ${PROVIDER_ONE_USER}
+    password: ${PROVIDER_ONE_PASSWORD}
+  - name: provider-two
+    url: ${PROVIDER_TWO_URL}
+    username: ${PROVIDER_TWO_USER}
+    password: ${PROVIDER_TWO_PASSWORD}
+    # Limits what this account publishes: vod, series, live. Omit it to publish everything.
+    # sections: [vod, series]
+
+upstream:
+  user_agent: "VLC/3.0.20 LibVLC/3.0.20"
+  connect_timeout: 8s
+  tcp_keepalive: 30s
+  tls_timeout: 8s
+  header_timeout: 10s
+  catalog_timeout: 240s
+  catalog_header_timeout: 120s
+  # Polling accounts too often can get them blocked.
+  status_interval: 5m
+  status_timeout: 15s
+  status_max_backoff: 30m
+  breaker_failures: 5
+  breaker_cooldown: 60s
+
+sync:
+  interval: 6h
+
+# Movies and episodes.
+file:
+  read_ahead: 64MiB
+  chunk_size: 64KiB
+  open_timeout: 8s
+  reopen_timeout: 5s
+  open_passes: 2
+  stall_timeout: 5s
+  slow_window: 10s
+  slow_min_rate: 32KiB
+  retries_per_copy: 1
+  retry_delays: [0s, 500ms, 1s, 2s]
+  recovery_budget: 45s
+  progress_bytes: 2MiB
+  park_after: 60s
+  client_idle_timeout: 30m
+  tail_check: 64KiB
+  sticky_ttl: 8h
+  dead_link_ttl: 30m
+  cache_entries: 20000
+
+live:
+  chunk_size: 64KiB
+  open_timeout: 10s
+  stall_timeout: 12s
+  reconnect_budget: 20s
+  healthy_after: 20s
+  retry_delays: [0s, 1s, 2s]
+
+details:
+  vod_timeout: 8s
+  series_timeout: 15s
+  vod_ttl: 24h
+  series_ttl: 6h
+  cache_entries: 5000
+
+events:
+  retention_days: 30
+
+catalog:
+  # Plot and cast are served on demand, which makes lists about 60% lighter.
+  slim_lists: true
+
+  merge:
+    vod: true
+    series: true
+    live: true
+
+  # Patterns are case-insensitive and match text without accents.
+  filters:
+    # Matching titles disappear everywhere, even if listed in another category.
+    block_content: ["adult", "xxx", "erotic", "picaro", "18\\+", "🔞", "porn"]
+    allow_categories: ["animadas adultos"]
+    # Only the category is hidden; titles listed elsewhere stay visible.
+    block_categories: []
+    # "xxx" here would also remove the Vin Diesel movie.
+    block_names: ["^\\s*\\(offline\\)"]
+    honor_adult_flag: true
+
+  identity:
+    year_patterns:
+      - '[(\[]\s*((?:19|20)\d{2})\s*[)\]]'
+      - '\[\s*((?:19|20)\d{2})\b[^\]]*\]'
+    fallback_year_pattern: '\s((?:19|20)\d{2})$'
+    min_year: 1900
+    max_year_ahead: 1
+    year_tolerance: 1
+    remove_patterns:
+      - '\[[^\]]*\]'
+      - '\([^)]*\d{3,4}p[^)]*\)'
+      - '^\s*copia de\s+'
+    tag_words: [sub, subs, subt, subtitulada, subtitulado, subtituladas, latino, lat, latam, castellano, cast, esp, espanol, spanish, dual, audio, ingles, english, eng, vose, vo, hd, fhd, uhd, sd, 4k, 8k, hdr, hdr10, cam, hdcam, ts, hc, web, webrip, webdl, dl, bluray, brrip, dvdrip, hdrip, 1080p, 720p, 480p, 360p, 2160p, extendida, extended, version, remastered, remasterizada, directors, cut, h264, h265, x264, x265, hevc, 3d, imax, mkv, mp4]
+    trailing_words: [subtitulada, subtitulado, subtituladas, latino, castellano, dual, hd, fhd, uhd, 4k, hdr, hdcam, cam, 1080p, 720p, 480p, 2160p, sub, vose, hdrip, webrip, bluray, brrip, dvdrip, extendida, extended]
+    stop_words: [y, and, e]
+    poster_pattern: 'image\.tmdb\.org/.*?/([A-Za-z0-9_-]{20,})\.(?:jpg|png|webp)'
+    # A poster shared by more titles than this is a placeholder.
+    poster_max_titles: 4
+
+  categories:
+    fallback: Others
+    noise_words: [vod, cine, peliculas, pelicula, movies, full, series, serie, canales, y]
+    drop_trailing_number: true
+    uppercase_words: [hbo, dc, ufc, wwe, tv, 4k, usa, uk, mtv, espn, ppv, tnt, cnn, bbc, hd, fhd, uhd, hdr, lego, vip, sd, abc, cbs, nbc, amc, fx]
+    pinned: ["^estrenos (20|19)", "^super estrenos", "^estrenos", "netflix", "disney", "hbo", "amazon|prime"]
+    aliases:
+      accion: Acción
+      animacion: Animación
+      animado: Animación
+      animadas: Animación
+      animadas infantiles: Animación
+      infantiles: Animación
+      animacion kids 1985 2000: Animación
+      animacion kids 2000 2026: Animación
+      animes: Anime
+      de animes: Anime
+      cienciaficcion: Ciencia Ficción
+      ciencia ficcion: Ciencia Ficción
+      fantasia: Fantasía
+      belico: Bélicas
+      belicas: Bélicas
+      biografica: Biográficas
+      cristianas: Religiosas
+      religioso: Religiosas
+      navidad: Navideñas
+      navidenas: Navideñas
+      romanticas: Romance
+      amazon: Amazon Prime
+      amazon prime video: Amazon Prime
+      prime video: Amazon Prime
+      de amazon prime video: Amazon Prime
+      hbo: HBO Max
+      hbomax: HBO Max
+      de hbo: HBO Max
+      de disney: Disney
+      latinoamerica: Latinoamericanas
+      latinoamericana: Latinoamericanas
+      mexicanas: Cine Mexicano
+      mexicano: Cine Mexicano
+      chilenas: Cine Chileno
+      chile: Cine Chileno
+      chileno: Cine Chileno
+      peruanas: Cine Peruano
+      argentinas: Cine Argentino
+      espana: España
+      estrenos hdcam baja calidad: Estrenos CAM
+      estrenos 20 21 22: Estrenos 2020-2022
+      estrenos 2022 2021: Estrenos 2020-2022
+      mas: Más Películas
+      pack: Variadas
+      variados: Variadas
+      solicitud de clientes: Pedidos
+      pedidos 2022: Pedidos
+      pedidos 2023: Pedidos
+      sd 5 megas: Calidad SD
+      480p: Calidad SD
+      720p: Calidad HD
+      4k hdr 100mb: 4K
+      cron marvel: Marvel Cronológico
+      universo de marvel orden cronologico: Marvel Cronológico
+      marvel dc: Marvel
+      de television: Televisión
+      de tv: Televisión
+      retro animadas: Retro Animación
+      retro animado: Retro Animación
+
+  # Scores decide which copy of a title plays first; matched against name and category.
+  copy_traits:
+    - { pattern: '\b(hd-?cam|cam|hdts|telesync)\b|baja calidad', score: -1000, label: CAM }
+    - { pattern: '\b(sub|subs|subt|vose)\b|subtitulad', score: -50, label: SUB }
+    - { pattern: '\b(480p|360p|sd)\b', score: -20 }
+    - { pattern: '\bdual\b', score: 30 }
+    - { pattern: '\b(lat|latino|latam)\b', score: 20 }
+    - { pattern: '\b(cast|castellano|espana)\b', score: -10 }
+    - { pattern: '\b(1080p|fhd)\b|full hd', score: 5 }

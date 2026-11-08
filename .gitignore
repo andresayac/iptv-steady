@@ -1,0 +1,7 @@
+.env
+/config.yaml
+data/
+dist/
+web/
+*.exe
+/iptv-steady

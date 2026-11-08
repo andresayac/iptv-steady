@@ -1,0 +1,19 @@
+[Unit]
+Description=IPTV Steady
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=iptv-steady
+WorkingDirectory=/opt/iptv-steady
+ExecStart=/opt/iptv-steady/iptv-steady -config /opt/iptv-steady/config.yaml serve
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/iptv-steady/data
+
+[Install]
+WantedBy=multi-user.target
