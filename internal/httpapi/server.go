@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -48,6 +50,10 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	listener, err := net.Listen("tcp", s.cfg.Server.Listen)
+	if err != nil {
+		return err
+	}
 	server := &http.Server{
 		Addr:              s.cfg.Server.Listen,
 		Handler:           s.Handler(),
@@ -60,7 +66,8 @@ func (s *Server) Run(ctx context.Context) error {
 		defer cancel()
 		_ = server.Shutdown(shutdown)
 	}()
-	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	slog.Info("listening", "address", listener.Addr())
+	if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

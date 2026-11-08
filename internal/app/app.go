@@ -46,6 +46,8 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Close() { a.journal.Close() }
 
 func (a *App) Serve(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if a.catalog.Restore() {
 		slog.Info("catalog restored from disk")
 	}
@@ -53,6 +55,7 @@ func (a *App) Serve(ctx context.Context) error {
 	background.Go(func() { a.pool.Run(ctx) })
 	background.Go(func() { a.catalog.Run(ctx) })
 	err := a.server.Run(ctx)
+	cancel()
 	background.Wait()
 	return err
 }
