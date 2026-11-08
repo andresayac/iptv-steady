@@ -35,7 +35,10 @@ var (
 
 const sniffBytes = 16
 
-var contentRange = regexp.MustCompile(`^bytes (\d+)-(\d+)/(\d+|\*)$`)
+var (
+	contentRange   = regexp.MustCompile(`^bytes (\d+)-(\d+)/(\d+|\*)$`)
+	playlistHeader = []byte("#EXTM3U")
+)
 
 type openRequest struct {
 	kind        xtream.Kind
@@ -96,6 +99,12 @@ func (u *upstream) readFull(buffer []byte, limit time.Duration) error {
 		return errStalled
 	}
 	return err
+}
+
+// isPlaylist reports whether the provider answered an HLS playlist, which can happen even for a .ts request.
+func (u *upstream) isPlaylist() bool {
+	head, _ := u.body.Peek(len(playlistHeader))
+	return bytes.Equal(head, playlistHeader)
 }
 
 func (e *Engine) open(ctx context.Context, request openRequest) (*upstream, error) {

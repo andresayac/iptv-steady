@@ -68,7 +68,7 @@ A failed title never splices a different file into a stream, because the result 
 - Problems between this server and the viewer are outside its reach. On Linux, enabling BBR helps over long distances:
   `sysctl -w net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr`.
 - Live channels reconnect and switch accounts, but have no buffer yet.
-- Channels requested as HLS are redirected to the provider, which exposes its address to the player. Providers that only offer HLS should publish `sections: [vod, series]`.
+- Channels requested as HLS, or that answer a `.ts` request with an HLS playlist, are redirected to the provider. That exposes its address to the player and leaves those channels without account switching. Providers that only offer HLS should publish `sections: [vod, series]`.
 - Identity is based on names, years and posters. The same film under unrelated names stays duplicated.
 - The guide comes from the first account that answers. Catch-up is not supported.
 

@@ -66,6 +66,71 @@ func TestLiveFallsThroughDeadAccountAtOpen(t *testing.T) {
 	watch(t, s, 50_000)
 }
 
+func TestLiveReportsOfflineChannelAtOnce(t *testing.T) {
+	first, second := testkit.NewPanel(t), testkit.NewPanel(t)
+	firstPath, secondPath := first.AddChannel("7"), second.AddChannel("8")
+	first.Always(firstPath, testkit.Fault{Kind: testkit.ErrorPage})
+	second.Always(secondPath, testkit.Fault{Kind: testkit.ErrorPage})
+	s := newStand(t, nil, channel(source(0, "7", "ts"), source(1, "8", "ts")), first, second)
+
+	got := s.fetch(http.MethodGet, "")
+
+	if got.status != http.StatusBadGateway {
+		t.Fatalf("status = %d", got.status)
+	}
+	if a, b := len(first.Requests(firstPath)), len(second.Requests(secondPath)); a != 1 || b != 1 {
+		t.Fatalf("requests = %d and %d; each source should be asked once", a, b)
+	}
+	requireKinds(t, s.recorder, events.GaveUp)
+}
+
+func TestLiveFindsWorkingSourceBehindOfflineOnes(t *testing.T) {
+	first, second := testkit.NewPanel(t), testkit.NewPanel(t)
+	first.Always(first.AddChannel("7"), testkit.Fault{Kind: testkit.ErrorPage})
+	second.AddChannel("8")
+	s := newStand(t, nil, channel(source(0, "7", "ts"), source(1, "8", "ts")), first, second)
+
+	watch(t, s, 50_000)
+}
+
+func TestLiveKeepsTryingAfterErrorPageOncePlaying(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	panel.Inject(panel.AddChannel("7"), testkit.Fault{Kind: testkit.Cut, At: 20_000}, testkit.Fault{Kind: testkit.ErrorPage})
+	s := newStand(t, nil, channel(source(0, "7", "ts")), panel)
+
+	watch(t, s, 100_000)
+
+	requireKinds(t, s.recorder, events.Dropped, events.Recovered)
+}
+
+func TestLiveRetriesWhenProviderRefusesAtOpen(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	panel.Inject(panel.AddChannel("7"), testkit.Fault{Kind: testkit.Status, Code: http.StatusForbidden})
+	s := newStand(t, nil, channel(source(0, "7", "ts")), panel)
+
+	watch(t, s, 50_000)
+}
+
+func TestLiveRedirectsChannelThatAnswersPlaylist(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	path := panel.AddChannel("7")
+	panel.Always(path, testkit.Fault{Kind: testkit.Playlist})
+	s := newStand(t, nil, channel(source(0, "7", "ts")), panel)
+	client := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	response, err := client.Get(s.front.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if location := response.Header.Get("Location"); response.StatusCode != http.StatusFound || location != panel.URL()+path {
+		t.Fatalf("status = %d, location = %q", response.StatusCode, location)
+	}
+	account := s.pool.Get(testkit.AccountName(0))
+	eventually(t, "the provider connection to close", func() bool { return panel.Active() == 0 && account.Open() == 0 })
+}
+
 func TestLiveSwitchesAccountWhenChannelDies(t *testing.T) {
 	first, second := testkit.NewPanel(t), testkit.NewPanel(t)
 	first.Always(first.AddChannel("7"), testkit.Fault{Kind: testkit.Cut, At: 20_000})

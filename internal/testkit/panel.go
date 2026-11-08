@@ -38,6 +38,10 @@ const (
 	EmptyBody
 	// Trickle sends almost nothing once the offset is reached.
 	Trickle
+	// ErrorPage answers 200 with an HTML page, as offline channels on real panels do.
+	ErrorPage
+	// Playlist answers an HLS playlist instead of a transport stream.
+	Playlist
 )
 
 type Fault struct {
@@ -342,6 +346,14 @@ func serveLive(w http.ResponseWriter, r *http.Request, fault Fault) {
 		return
 	case EmptyBody:
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		return
+	case ErrorPage:
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		fmt.Fprint(w, "<html><head><title>Channel offline</title></head></html>")
+		return
+	case Playlist:
+		w.Header().Set("Content-Type", "application/x-mpegURL")
+		fmt.Fprint(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nlow/index.m3u8\n")
 		return
 	}
 	block := make([]byte, livePacket*livePackets)

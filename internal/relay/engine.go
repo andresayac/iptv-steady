@@ -98,6 +98,10 @@ func (e *Engine) ordered(media Media, preferred *Source) []Source {
 	return order
 }
 
+func (e *Engine) streamURL(kind xtream.Kind, source Source, extension string) string {
+	return e.pool.Get(source.Account).Client.StreamURL(kind, source.ID, extension)
+}
+
 func sleep(ctx context.Context, duration time.Duration) bool {
 	if duration <= 0 {
 		return ctx.Err() == nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"iptv-steady/internal/events"
@@ -35,8 +36,14 @@ func (e *Engine) ServeLive(w http.ResponseWriter, r *http.Request, viewer Viewer
 		return
 	}
 	header := w.Header()
-	header.Set("Content-Type", liveContentType)
 	header.Set("Cache-Control", "no-store")
+	if up.isPlaylist() {
+		target := e.streamURL(s.media.Kind, up.source, extension)
+		up.close()
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
+	header.Set("Content-Type", liveContentType)
 	w.WriteHeader(http.StatusOK)
 	for {
 		opened := time.Now()
@@ -73,9 +80,10 @@ func (s *liveSession) connect(ctx context.Context) (*upstream, error) {
 		s.episodeStart = time.Now()
 	}
 	deadline := s.episodeStart.Add(cfg.ReconnectBudget)
+	answeredDead := map[Source]bool{}
 	var last error = errNoSources
 	for time.Now().Before(deadline) {
-		order := s.order()
+		order := s.candidates(answeredDead)
 		if len(order) == 0 {
 			break
 		}
@@ -98,9 +106,19 @@ func (s *liveSession) connect(ctx context.Context) (*upstream, error) {
 		last = err
 		if errors.Is(err, errDeadLink) {
 			s.engine.markDead(s.media.Kind, source)
+			answeredDead[source] = true
 		}
 	}
 	return nil, last
+}
+
+// candidates leaves out sources that just answered as offline, unless the viewer is already watching: then an error page can be a passing fault.
+func (s *liveSession) candidates(answeredDead map[Source]bool) []Source {
+	order := s.order()
+	if s.current != nil {
+		return order
+	}
+	return slices.DeleteFunc(order, func(source Source) bool { return answeredDead[source] })
 }
 
 // order leaves a source that keeps failing right after connecting for last.
@@ -139,5 +157,5 @@ func (e *Engine) LiveURL(media Media, extension string) (string, error) {
 	if len(order) == 0 {
 		return "", fmt.Errorf("channel %d: %w", media.TitleID, errNoSources)
 	}
-	return e.pool.Get(order[0].Account).Client.StreamURL(media.Kind, order[0].ID, extension), nil
+	return e.streamURL(media.Kind, order[0], extension), nil
 }
