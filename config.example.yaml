@@ -129,6 +129,12 @@ catalog:
     drop_trailing_number: true
     uppercase_words: [hbo, dc, ufc, wwe, tv, 4k, usa, uk, mtv, espn, ppv, tnt, cnn, bbc, hd, fhd, uhd, hdr, lego, vip, sd, abc, cbs, nbc, amc, fx]
     pinned: ["^estrenos (20|19)", "^super estrenos", "^estrenos", "netflix", "disney", "hbo", "amazon|prime"]
+    # Pins and aliases for one section: vod, series or live. Its aliases win over the shared ones and its pins replace them.
+    sections:
+      live:
+        pinned: []
+        aliases:
+          tv news: News
     aliases:
       accion: Acción
       animacion: Animación

@@ -117,10 +117,20 @@ func (c *categorizer) key(name string) string {
 	return strings.Join(c.meaningful(fold(name)), " ")
 }
 
-func (c *categorizer) identify(name string) (string, string) {
+func (c *categorizer) orFallback(name string) string {
 	if strings.TrimSpace(name) == "" {
-		return c.key(c.fallback), c.fallback
+		return c.fallback
 	}
+	return name
+}
+
+// origin is the provider's own category key, which stays the same however categories are renamed or joined.
+func (c *categorizer) origin(name string) string {
+	return c.key(c.orFallback(name))
+}
+
+func (c *categorizer) identify(name string) (string, string) {
+	name = c.orFallback(name)
 	key := c.key(name)
 	if shown, found := c.aliases[key]; found {
 		return c.key(shown), shown

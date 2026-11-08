@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -157,6 +158,29 @@ type Categories struct {
 	UppercaseWords     []string          `yaml:"uppercase_words"`
 	Pinned             []string          `yaml:"pinned"`
 	Aliases            map[string]string `yaml:"aliases"`
+	// Sections refines pins and aliases for vod, series or live.
+	Sections map[string]CategorySection `yaml:"sections"`
+}
+
+type CategorySection struct {
+	Pinned  []string          `yaml:"pinned"`
+	Aliases map[string]string `yaml:"aliases"`
+}
+
+// For returns the rules of one section: its aliases take precedence and its pins, when it has them, replace the shared ones.
+func (c Categories) For(section string) Categories {
+	override, found := c.Sections[section]
+	if !found {
+		return c
+	}
+	aliases := make(map[string]string, len(c.Aliases)+len(override.Aliases))
+	maps.Copy(aliases, c.Aliases)
+	maps.Copy(aliases, override.Aliases)
+	c.Aliases = aliases
+	if override.Pinned != nil {
+		c.Pinned = override.Pinned
+	}
+	return c
 }
 
 type CopyTrait struct {
@@ -251,6 +275,9 @@ func (c *Config) Validate() error {
 		}
 		seen[a.Name] = true
 		a.URL = strings.TrimRight(a.URL, "/")
+	}
+	for section := range c.Catalog.Categories.Sections {
+		p.require(slices.Contains(knownSections, section), "catalog.categories.sections has an unknown section %q", section)
 	}
 	p.positive(c.timeouts())
 	p.positive(c.sizes())

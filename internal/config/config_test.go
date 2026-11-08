@@ -47,6 +47,13 @@ func TestIncompleteConfigurationListsWhatIsMissing(t *testing.T) {
 	}
 }
 
+func TestUnknownCategorySectionIsRejected(t *testing.T) {
+	cfg := &Config{Catalog: Catalog{Categories: Categories{Sections: map[string]CategorySection{"movies": {}}}}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), `unknown section "movies"`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestEnvFileNeverOverridesTheEnvironment(t *testing.T) {
 	t.Setenv("KEPT_VALUE", "from-environment")
 	path := writeFile(t, ".env", "# comment\nKEPT_VALUE=from-file\nNEW_VALUE=\"quoted\"\n")

@@ -28,7 +28,7 @@ type Builder struct {
 	ids        *IDs
 	filters    *filterSet
 	names      *normalizer
-	categories *categorizer
+	categories map[xtream.Kind]*categorizer
 	traits     []trait
 }
 
@@ -41,9 +41,11 @@ func NewBuilder(cfg config.Catalog, ids *IDs) (*Builder, error) {
 	if err != nil {
 		return nil, err
 	}
-	categories, err := newCategorizer(cfg.Categories)
-	if err != nil {
-		return nil, err
+	categories := make(map[xtream.Kind]*categorizer, len(xtream.Kinds))
+	for _, kind := range xtream.Kinds {
+		if categories[kind], err = newCategorizer(cfg.Categories.For(string(kind))); err != nil {
+			return nil, err
+		}
 	}
 	traits, err := newTraits(cfg.CopyTraits)
 	if err != nil {
@@ -75,12 +77,13 @@ type row struct {
 	year     int
 	poster   string
 
-	categoryKey   string
-	categoryShown string
-	score         int
-	label         string
-	blocked       bool
-	hidden        bool
+	categoryOrigin string
+	categoryKey    string
+	categoryShown  string
+	score          int
+	label          string
+	blocked        bool
+	hidden         bool
 }
 
 type group struct {
@@ -111,7 +114,7 @@ func (b *Builder) section(kind xtream.Kind, sources []Source) *Section {
 		}
 		section.Titles = append(section.Titles, b.title(kind, g, used, categories, &stats))
 	}
-	section.Categories = b.orderCategories(categories)
+	section.Categories = b.orderCategories(kind, categories)
 	section.Stats = stats
 	sortByAdded(section.Titles)
 	section.prepare()
@@ -193,7 +196,8 @@ func (b *Builder) row(kind xtream.Kind, account string, priority int, stream *xt
 		r.key = "#" + account + "|" + id
 	}
 	r.poster = b.names.posterKey(stream.Artwork(kind))
-	r.categoryKey, r.categoryShown = b.categories.identify(category)
+	r.categoryOrigin = b.categories[kind].origin(category)
+	r.categoryKey, r.categoryShown = b.categories[kind].identify(category)
 	r.score, r.label = evaluateTraits(b.traits, foldedName+" | "+foldedCategory)
 	return r
 }
@@ -208,12 +212,12 @@ func (b *Builder) merges(kind xtream.Kind) bool {
 	return b.cfg.Merge.Live
 }
 
-func (b *Builder) identity(kind xtream.Kind, r *row) string {
+func (b *Builder) identity(kind xtream.Kind, r *row, category string) string {
 	switch {
 	case !b.merges(kind):
 		return fmt.Sprintf("%s|%s|%s", kind, r.account, r.id)
 	case kind == xtream.Live:
-		return fmt.Sprintf("%s|%s|%s", kind, r.categoryKey, r.key)
+		return fmt.Sprintf("%s|%s|%s", kind, category, r.key)
 	}
 	return fmt.Sprintf("%s|%s|%d", kind, r.key, r.year)
 }
@@ -225,7 +229,7 @@ func (b *Builder) group(kind xtream.Kind, rows []*row, stats *Stats) []group {
 	switch {
 	case !b.merges(kind):
 	case kind == xtream.Live:
-		linkEqualKeys(rows, links, func(r *row) string { return b.identity(kind, r) })
+		linkEqualKeys(rows, links, func(r *row) string { return b.identity(kind, r, r.categoryKey) })
 	default:
 		linkByTitle(rows, links, identity.YearTolerance)
 		stats.PosterMerges = linkByPoster(rows, links, identity.PosterMaxTitles, identity.YearTolerance)
@@ -241,7 +245,7 @@ func (b *Builder) group(kind xtream.Kind, rows []*row, stats *Stats) []group {
 		seen := map[string]bool{}
 		for _, i := range indexes {
 			g.rows = append(g.rows, rows[i])
-			if key := b.identity(kind, rows[i]); !seen[key] {
+			if key := b.identity(kind, rows[i], rows[i].categoryOrigin); !seen[key] {
 				seen[key] = true
 				g.keys = append(g.keys, key)
 			}
@@ -364,12 +368,12 @@ func countTitle(stats *Stats, accounts map[string]bool) {
 	}
 }
 
-func (b *Builder) orderCategories(categories map[string]*categoryTally) []*Category {
+func (b *Builder) orderCategories(kind xtream.Kind, categories map[string]*categoryTally) []*Category {
 	keys := make([]string, 0, len(categories))
 	for key := range categories {
 		keys = append(keys, key)
 	}
-	b.categories.sortKeys(keys)
+	b.categories[kind].sortKeys(keys)
 	ordered := make([]*Category, 0, len(keys))
 	for _, key := range keys {
 		entry := categories[key]

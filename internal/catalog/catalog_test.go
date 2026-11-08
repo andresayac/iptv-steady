@@ -103,6 +103,83 @@ func TestCategoryIdentityIgnoresDecoration(t *testing.T) {
 	}
 }
 
+func TestSectionRulesOnlyApplyToTheirSection(t *testing.T) {
+	builder, _ := newTestBuilder(t, func(cfg *config.Catalog) {
+		cfg.Categories.Aliases = map[string]string{"chile": "Cine Chileno", "others": "Otros"}
+		cfg.Categories.Sections = map[string]config.CategorySection{"live": {Aliases: map[string]string{"chile": "Chile TV"}, Pinned: []string{"^chile"}}}
+	})
+	if _, shown := builder.categories[xtream.VOD].identify("Chile"); shown != "Cine Chileno" {
+		t.Errorf("vod = %q", shown)
+	}
+	if _, shown := builder.categories[xtream.Live].identify("Chile"); shown != "Chile TV" {
+		t.Errorf("live = %q", shown)
+	}
+	if _, shown := builder.categories[xtream.Live].identify(""); shown != "Otros" {
+		t.Errorf("fallback = %q", shown)
+	}
+	if rank := builder.categories[xtream.Live].pinRank("chile tv"); rank != 0 {
+		t.Errorf("live pin rank = %d", rank)
+	}
+	if rank := builder.categories[xtream.VOD].pinRank("premieres 2026"); rank != 0 {
+		t.Errorf("vod pin rank = %d", rank)
+	}
+}
+
+func liveSource(categories map[string]string, streams ...xtream.Stream) []Source {
+	var list []xtream.Category
+	for id, name := range categories {
+		list = append(list, xtream.Category{ID: xtream.Text(id), Name: xtream.Text(name)})
+	}
+	return []Source{{Account: "a", Data: &xtream.Catalog{
+		FetchedAt:  time.Now(),
+		Categories: map[xtream.Kind][]xtream.Category{xtream.Live: list},
+		Streams:    map[xtream.Kind][]xtream.Stream{xtream.Live: streams},
+	}}}
+}
+
+func withLiveAliases(t *testing.T, ids *IDs, aliases map[string]string) *Builder {
+	t.Helper()
+	cfg := testkit.Config(t).Catalog
+	cfg.Categories.Sections = map[string]config.CategorySection{"live": {Aliases: aliases}}
+	builder, err := NewBuilder(cfg, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return builder
+}
+
+func TestRenamingALiveCategoryKeepsChannelNumbers(t *testing.T) {
+	channels := liveSource(map[string]string{"1": "TV Colombia"}, movie("10", "Caracol", "1"))
+	original, ids := newTestBuilder(t, nil)
+	before := original.Build(channels).Section(xtream.Live).Titles[0].ID
+
+	section := withLiveAliases(t, ids, map[string]string{"tv colombia": "Colombia"}).Build(channels).Section(xtream.Live)
+
+	if section.Titles[0].ID != before || section.Categories[0].Name != "Colombia" {
+		t.Fatalf("id %d, want %d; categories %+v", section.Titles[0].ID, before, section.Categories)
+	}
+}
+
+func TestJoiningLiveCategoriesJoinsChannelsAndKeepsOldNumbers(t *testing.T) {
+	channels := liveSource(map[string]string{"1": "TV Colombia", "2": "Colombia Tvº"}, movie("10", "Caracol", "1"), movie("20", "Caracol", "2"))
+	original, ids := newTestBuilder(t, nil)
+	separate := original.Build(channels).Section(xtream.Live).Titles
+	if len(separate) != 2 {
+		t.Fatalf("titles before = %v", len(separate))
+	}
+
+	section := withLiveAliases(t, ids, map[string]string{"tv colombia": "Colombia", "colombia tvº": "Colombia"}).Build(channels).Section(xtream.Live)
+
+	if len(section.Titles) != 1 || len(section.Titles[0].Copies) != 2 || len(section.Categories) != 1 {
+		t.Fatalf("titles %d, categories %d", len(section.Titles), len(section.Categories))
+	}
+	for _, old := range separate {
+		if ids.Resolve(old.ID) != section.Titles[0].ID {
+			t.Errorf("number %d no longer reaches the channel", old.ID)
+		}
+	}
+}
+
 type account struct {
 	name       string
 	categories map[string]string
