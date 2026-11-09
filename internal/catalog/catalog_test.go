@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"maps"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -79,7 +80,7 @@ func TestDisplayName(t *testing.T) {
 }
 
 func TestCategoryIdentityIgnoresDecoration(t *testing.T) {
-	c, err := newCategorizer(testkit.Config(t).Catalog.Categories)
+	c, err := newCategorizer(testkit.Config(t).Catalog.Categories, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,6 +339,79 @@ func TestMergingCanBeDisabled(t *testing.T) {
 	)).Section(xtream.VOD)
 	if len(section.Titles) != 2 {
 		t.Fatalf("titles = %d", len(section.Titles))
+	}
+}
+
+// orderedSource keeps categories in the order the provider lists them, which the map-based helper cannot.
+func orderedSource(name string, categories []xtream.Category, streams ...xtream.Stream) Source {
+	return Source{Account: name, Data: &xtream.Catalog{
+		FetchedAt:  time.Now(),
+		Categories: map[xtream.Kind][]xtream.Category{xtream.VOD: categories},
+		Streams:    map[xtream.Kind][]xtream.Stream{xtream.VOD: streams},
+	}}
+}
+
+func originalNamesSources() []Source {
+	return []Source{
+		orderedSource("a", []xtream.Category{{ID: "1", Name: "⭐️VOD DRAMA"}, {ID: "2", Name: "Acción"}},
+			movie("10", "Matrix (1999) [LAT]", "1"), movie("11", "Up (2009) CAM", "2")),
+		orderedSource("b", []xtream.Category{{ID: "5", Name: "Zeta"}, {ID: "6", Name: "acción "}},
+			movie("50", "Matrix [1999, R][Full HD - Latino]", "6"), movie("51", "Solo (2018)", "5")),
+	}
+}
+
+func categoryNamesOf(section *Section) []string {
+	out := make([]string, 0, len(section.Categories))
+	for _, c := range section.Categories {
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+func TestOriginalNamesKeepProviderNamesAndOrder(t *testing.T) {
+	builder, _ := newTestBuilder(t, func(cfg *config.Catalog) { cfg.OriginalNames, cfg.Categories.Pinned = true, nil })
+	section := builder.Build(originalNamesSources()).Section(xtream.VOD)
+
+	if got, want := names(section), []string{"Matrix (1999) [LAT]", "Solo (2018)", "Up (2009) CAM"}; !slices.Equal(got, want) {
+		t.Fatalf("names = %q; want %q", got, want)
+	}
+	if got, want := categoryNamesOf(section), []string{"⭐️VOD DRAMA", "Acción", "Zeta", "acción"}; !slices.Equal(got, want) {
+		t.Fatalf("categories = %q; want the providers' names in their order %q", got, want)
+	}
+}
+
+func TestPinsStillApplyToOriginalNames(t *testing.T) {
+	builder, _ := newTestBuilder(t, func(cfg *config.Catalog) { cfg.OriginalNames, cfg.Categories.Pinned = true, []string{"^zeta"} })
+	section := builder.Build(originalNamesSources()).Section(xtream.VOD)
+
+	if got, want := categoryNamesOf(section), []string{"Zeta", "⭐️VOD DRAMA", "Acción", "acción"}; !slices.Equal(got, want) {
+		t.Fatalf("categories = %q; want %q", got, want)
+	}
+}
+
+func TestSwitchingToOriginalNamesKeepsTitleNumbers(t *testing.T) {
+	ids, err := LoadIDs(filepath.Join(t.TempDir(), "ids.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	numbers := func(original bool) map[string]int64 {
+		cfg := testkit.Config(t).Catalog
+		cfg.OriginalNames = original
+		builder, err := NewBuilder(cfg, ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]int64{}
+		for _, title := range builder.Build(originalNamesSources()).Section(xtream.VOD).Titles {
+			out[title.Copies[0].Account+title.Copies[0].ID] = title.ID
+		}
+		return out
+	}
+
+	before, after := numbers(false), numbers(true)
+
+	if len(before) != 3 || !maps.Equal(before, after) {
+		t.Fatalf("numbers changed from %v to %v", before, after)
 	}
 }
 

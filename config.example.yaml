@@ -101,6 +101,11 @@ catalog:
   # Plot and cast are served on demand, which makes lists about 60% lighter.
   slim_lists: true
 
+  # Keep title and category names as providers send them, and categories in their order.
+  # Categories then join only when named identically. Movie and series numbers stay the same either way.
+  original_names: false
+
+  # Turning a section off lists every provider entry on its own, and gives its titles new numbers.
   merge:
     vod: true
     series: true
@@ -129,6 +134,7 @@ catalog:
       - '\[[^\]]*\]'
       - '\([^)]*\d{3,4}p[^)]*\)'
       - '^\s*copia de\s+'
+      - '\.(mp4|mkv|avi|m4v|mov|mpg|flv|wmv)\b'
     tag_words: [sub, subs, subt, subtitulada, subtitulado, subtituladas, latino, lat, latam, castellano, cast, esp, espanol, spanish, dual, audio, ingles, english, eng, vose, vo, hd, fhd, uhd, sd, 4k, 8k, hdr, hdr10, cam, hdcam, ts, hc, web, webrip, webdl, dl, bluray, brrip, dvdrip, hdrip, 1080p, 720p, 480p, 360p, 2160p, extendida, extended, version, remastered, remasterizada, directors, cut, h264, h265, x264, x265, hevc, 3d, imax, mkv, mp4]
     trailing_words: [subtitulada, subtitulado, subtituladas, latino, castellano, dual, hd, fhd, uhd, 4k, hdr, hdcam, cam, 1080p, 720p, 480p, 2160p, sub, vose, hdrip, webrip, bluray, brrip, dvdrip, extendida, extended]
     stop_words: [y, and, e]

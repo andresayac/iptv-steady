@@ -128,12 +128,14 @@ type Events struct {
 }
 
 type Catalog struct {
-	SlimLists  bool        `yaml:"slim_lists"`
-	Merge      Merge       `yaml:"merge"`
-	Filters    Filters     `yaml:"filters"`
-	Identity   Identity    `yaml:"identity"`
-	Categories Categories  `yaml:"categories"`
-	CopyTraits []CopyTrait `yaml:"copy_traits"`
+	SlimLists bool `yaml:"slim_lists"`
+	// OriginalNames keeps title and category names as providers send them, and categories in their order.
+	OriginalNames bool        `yaml:"original_names"`
+	Merge         Merge       `yaml:"merge"`
+	Filters       Filters     `yaml:"filters"`
+	Identity      Identity    `yaml:"identity"`
+	Categories    Categories  `yaml:"categories"`
+	CopyTraits    []CopyTrait `yaml:"copy_traits"`
 }
 
 type Merge struct {

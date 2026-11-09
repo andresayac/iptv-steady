@@ -76,8 +76,9 @@ func evaluateTraits(traits []trait, text string) (int, string) {
 	return score, label
 }
 
-// categorizer gives equivalent provider categories the same identity.
+// categorizer gives equivalent provider categories the same identity. Keeping original names, only identical names are equivalent.
 type categorizer struct {
+	original   bool
 	fallback   string
 	noise      map[string]bool
 	dropNumber bool
@@ -86,12 +87,12 @@ type categorizer struct {
 	pinned     []*regexp.Regexp
 }
 
-func newCategorizer(cfg config.Categories) (*categorizer, error) {
+func newCategorizer(cfg config.Categories, original bool) (*categorizer, error) {
 	pinned, err := compilePatterns(cfg.Pinned)
 	if err != nil {
 		return nil, err
 	}
-	return &categorizer{fallback: cfg.Fallback, noise: wordSet(cfg.NoiseWords), dropNumber: cfg.DropTrailingNumber, uppercase: wordSet(cfg.UppercaseWords), aliases: cfg.Aliases, pinned: pinned}, nil
+	return &categorizer{original: original, fallback: cfg.Fallback, noise: wordSet(cfg.NoiseWords), dropNumber: cfg.DropTrailingNumber, uppercase: wordSet(cfg.UppercaseWords), aliases: cfg.Aliases, pinned: pinned}, nil
 }
 
 func (c *categorizer) meaningful(name string) []string {
@@ -131,6 +132,10 @@ func (c *categorizer) origin(name string) string {
 
 func (c *categorizer) identify(name string) (string, string) {
 	name = c.orFallback(name)
+	if c.original {
+		name = strings.TrimSpace(name)
+		return name, name
+	}
 	key := c.key(name)
 	if shown, found := c.aliases[key]; found {
 		return c.key(shown), shown
@@ -140,21 +145,25 @@ func (c *categorizer) identify(name string) (string, string) {
 
 func (c *categorizer) pinRank(key string) int {
 	for i, re := range c.pinned {
-		if re.MatchString(key) {
+		if re.MatchString(fold(key)) {
 			return i
 		}
 	}
 	return len(c.pinned)
 }
 
-// sortKeys places pinned categories first, newest first within a pin, then the rest alphabetically.
-func (c *categorizer) sortKeys(keys []string) {
+// sortKeys places pinned categories first. Keeping original names, the rest follow the providers' order; otherwise the newest come first within a pin and the rest go alphabetically.
+func (c *categorizer) sortKeys(keys []string, position func(string) int) {
 	sort.Slice(keys, func(i, j int) bool {
 		rankI, rankJ := c.pinRank(keys[i]), c.pinRank(keys[j])
-		if rankI != rankJ {
+		switch {
+		case rankI != rankJ:
 			return rankI < rankJ
-		}
-		if rankI < len(c.pinned) {
+		case c.original && position(keys[i]) != position(keys[j]):
+			return position(keys[i]) < position(keys[j])
+		case c.original:
+			return keys[i] < keys[j]
+		case rankI < len(c.pinned):
 			return keys[i] > keys[j]
 		}
 		return keys[i] < keys[j]

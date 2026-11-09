@@ -171,12 +171,145 @@ Put a reverse proxy in front for HTTPS, set `PUBLIC_URL` and bind `LISTEN` to lo
 | `live` | Channels: stall detection and reconnection |
 | `upstream` | Timeouts, account polling, circuit breaker |
 | `catalog.filters` | What to hide. Adult content is blocked by default |
-| `catalog.merge` | Which sections merge duplicates; turn all off for a pure pass-through |
+| `catalog.original_names` | Keep names and categories as providers send them |
+| `catalog.merge` | Which sections join the copies of a title into one entry |
 | `catalog.identity` | How titles are recognized as the same |
 | `catalog.categories` | Category names, joining and order, shared or per section |
 | `catalog.copy_traits` | Which copy of a title plays first |
 
 Restart after changing the configuration. Catalog rules apply right away from the saved catalogs, with no new requests to your providers, and channel numbers stay the same when you rename or join categories.
+
+### Common setups
+
+Repairs during playback work the same way whatever you choose here. What changes is what the lists contain and how they look.
+
+| You want | Set |
+|---|---|
+| Just the proxy, with one tidy catalog | Nothing: the defaults in `config.example.yaml` join duplicates and hide adult content |
+| Only movies, or movies and series | `sections: [vod]` or `sections: [vod, series]` on each account |
+| Adult content too | Empty `filters.block_content` and `honor_adult_flag: false` |
+| One category gone | Its name in `filters.block_categories`. Titles that only appear there go with it |
+| Some titles gone | A pattern in `filters.block_names`, which matches titles in every category |
+| Each title once, named as your providers name it | `original_names: true` |
+| Every provider entry as sent, nothing hidden | `original_names: true`, every `merge` section `false`, empty `filters` and `pinned` lists, and `honor_adult_flag: false` |
+
+Adult content is recognized by category names and by the flag providers set on titles, never by title alone, so a film such as *Sex and the City* in an ordinary category stays.
+
+With `original_names`, titles keep the name of their best copy and categories keep each provider's name and order. Categories join only when two providers name them identically, and pins still apply.
+
+With merging off, each entry has a single copy, so playback can resume on the same account but not continue on another one. Lists also get longer: one deployment went from 38,188 movies to 111,025 entries.
+
+Switching `original_names` keeps every movie and series number; a few channels may get new ones, because channels only join within identically named categories. Switching `merge` gives every title in that section a new number, and players lose their favorites and resume points for it.
+
+A single account works with any of these. With merging on, the duplicates inside that account still join.
+
+### Adapt it to your providers and language
+
+The code knows no language or country: every word it relies on comes from `config.yaml`. The example is tuned for Spanish-language providers in Latin America, so replace its word lists when yours use another language, and take the recipes below as a starting point.
+
+| Settings with words in them | What they do |
+|---|---|
+| `identity.tag_words`, `trailing_words`, `stop_words`, `remove_patterns` | Strip quality, language and release tags from titles, so copies of the same film match |
+| `categories.noise_words`, `aliases`, `pinned`, `uppercase_words`, `fallback` | Clean, join, rename and order categories |
+| `copy_traits` | Choose which copy plays first, and label titles such as `[CAM]` |
+| `filters` | Hide categories or titles |
+
+Patterns are case-insensitive [regular expressions](https://github.com/google/re2/wiki/Syntax), matched on text without accents. Aliases and pins work on a category's key: its name in lowercase, without accents, emoji, symbols or noise words, and without a trailing single digit. With the example's noise words, `⭐️VOD | COMEDIA 2` has the key `comedia`.
+
+Restart after each change and look at the lists in your player. The catalog is rebuilt from the saved copies, so trying ideas costs your providers nothing.
+
+**Providers in another language.** French, for example. Replace the Spanish aliases and pins too:
+
+```yaml
+catalog:
+  identity:
+    tag_words: [vf, vff, vfq, vostfr, truefrench, french, multi, hd, fhd, uhd, 4k, cam, hdcam, webrip, bluray, 1080p, 720p]
+    trailing_words: [vf, vff, vostfr, truefrench, multi, hd, fhd, 4k]
+    stop_words: [et, and]
+  categories:
+    noise_words: [vod, films, film, series, serie, chaines]
+    fallback: Autres
+  copy_traits:
+    - { pattern: '\b(cam|hdcam)\b', score: -1000, label: CAM }
+    - { pattern: '\bvostfr\b', score: -50, label: VOSTFR }
+    - { pattern: '\bmulti\b', score: 30 }
+    - { pattern: '\b(vf|vff|truefrench)\b', score: 20 }
+```
+
+**Your country's channels first**, without touching the order of movies:
+
+```yaml
+catalog:
+  categories:
+    sections:
+      live:
+        pinned: ['^colombia', 'deportes', '^uk']
+```
+
+**Join scattered categories, or rename one.** The left side is a key, the right side the name players show:
+
+```yaml
+catalog:
+  categories:
+    aliases:
+      infantil: Kids
+      infantiles: Kids
+      cartoons: Kids
+      dibujos animados: Kids
+      estrenos: Premieres
+```
+
+**Hide countries or topics you never watch.** Titles that only appear in those categories go with them. For providers that write codes such as `UK | News`, use a pattern like `'^uk\s*\|'`:
+
+```yaml
+catalog:
+  filters:
+    block_categories: ['\b(peru|chile|ecuador)\b', 'radio']
+```
+
+**Keep only what you watch.** Everything is hidden except the categories you allow. This applies to every section, so allow your movie and series categories too:
+
+```yaml
+catalog:
+  filters:
+    block_content: ['.']
+    allow_categories: ['colombia', 'deportes', 'estrenos', 'netflix']
+```
+
+**Remove noise.** `block_content` drops everything in matching categories, wherever it also appears; `block_names` drops titles by name:
+
+```yaml
+catalog:
+  filters:
+    block_content: ['adult', 'xxx', 'porn', 'karaoke']
+    block_names: ['^\s*\(offline\)', '\bkaraoke\b', '\btrailer\b']
+```
+
+**Prefer the best copy.** Traits also apply to channels, so the HD copy of a channel can play before the SD one. Add them to your existing list:
+
+```yaml
+catalog:
+  copy_traits:
+    - { pattern: '\b(cam|hdcam|telesync)\b', score: -1000, label: CAM }
+    - { pattern: '\b(fhd|1080p?)\b', score: 10 }
+    - { pattern: '\bsd\b', score: -10 }
+```
+
+**Movies from one account, channels from another.** Each account publishes only its sections:
+
+```yaml
+accounts:
+  - name: films
+    url: ${FILMS_URL}
+    username: ${FILMS_USER}
+    password: ${FILMS_PASSWORD}
+    sections: [vod, series]
+  - name: television
+    url: ${TV_URL}
+    username: ${TV_USER}
+    password: ${TV_PASSWORD}
+    sections: [live]
+```
 
 ## Limits
 
@@ -186,6 +319,7 @@ Restart after changing the configuration. Catalog rules apply right away from th
 - Live channels reconnect and switch accounts, but have no buffer yet.
 - Channels requested as HLS, or that answer a `.ts` request with an HLS playlist, are redirected to the provider. That exposes its address to the player and leaves those channels without account switching. Providers that only offer HLS should publish `sections: [vod, series]`.
 - Identity is based on names, years and posters. The same film under unrelated names stays duplicated.
+- A title appears only in the first category its provider gives it, even when the provider lists it in several.
 - The guide comes from the first account that answers. Catch-up is not supported.
 
 ## Scale

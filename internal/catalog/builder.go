@@ -3,6 +3,7 @@ package catalog
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -43,7 +44,7 @@ func NewBuilder(cfg config.Catalog, ids *IDs) (*Builder, error) {
 	}
 	categories := make(map[xtream.Kind]*categorizer, len(xtream.Kinds))
 	for _, kind := range xtream.Kinds {
-		if categories[kind], err = newCategorizer(cfg.Categories.For(string(kind))); err != nil {
+		if categories[kind], err = newCategorizer(cfg.Categories.For(string(kind)), cfg.OriginalNames); err != nil {
 			return nil, err
 		}
 	}
@@ -77,13 +78,14 @@ type row struct {
 	year     int
 	poster   string
 
-	categoryOrigin string
-	categoryKey    string
-	categoryShown  string
-	score          int
-	label          string
-	blocked        bool
-	hidden         bool
+	categoryOrigin   string
+	categoryKey      string
+	categoryShown    string
+	categoryPosition int
+	score            int
+	label            string
+	blocked          bool
+	hidden           bool
 }
 
 type group struct {
@@ -92,9 +94,10 @@ type group struct {
 }
 
 type categoryTally struct {
-	id    int64
-	shown string
-	count int
+	id       int64
+	shown    string
+	count    int
+	position int
 }
 
 func newStats() Stats {
@@ -132,33 +135,44 @@ func (g group) visible() bool {
 	return listed
 }
 
-func categoryNames(categories []xtream.Category) map[string]string {
-	names := make(map[string]string, len(categories))
-	for _, c := range categories {
-		names[string(c.ID)] = string(c.Name)
-	}
-	return names
+// providerCategory is a category as an account lists it. Positions follow the accounts' order, then each provider's own.
+type providerCategory struct {
+	name     string
+	position int
 }
 
-func categoryOf(names map[string]string, stream *xtream.Stream) string {
-	if name, found := names[string(stream.CategoryID)]; found {
-		return name
+const unlisted = math.MaxInt
+
+func categoryIndex(categories []xtream.Category, offset int) map[string]providerCategory {
+	index := make(map[string]providerCategory, len(categories))
+	for i, c := range categories {
+		index[string(c.ID)] = providerCategory{name: string(c.Name), position: offset + i}
+	}
+	return index
+}
+
+func categoryOf(index map[string]providerCategory, stream *xtream.Stream) providerCategory {
+	if found, ok := index[string(stream.CategoryID)]; ok {
+		return found
 	}
 	for _, id := range stream.CategoryIDs {
-		if name, found := names[id]; found {
-			return name
+		if found, ok := index[id]; ok {
+			return found
 		}
 	}
-	return ""
+	return providerCategory{position: unlisted}
 }
 
 func (b *Builder) collect(kind xtream.Kind, sources []Source, stats *Stats) []*row {
 	var rows []*row
+	offset := 0
 	for priority, source := range sources {
 		if !source.publishes(kind) {
 			continue
 		}
-		names := categoryNames(source.Data.Categories[kind])
+		listed := source.Data.Categories[kind]
+		names := categoryIndex(listed, offset)
+		offset += len(listed)
 		accountStats := &AccountStats{}
 		stats.Accounts[source.Account] = accountStats
 		streams := source.Data.Streams[kind]
@@ -174,13 +188,14 @@ func (b *Builder) collect(kind xtream.Kind, sources []Source, stats *Stats) []*r
 	return rows
 }
 
-func (b *Builder) row(kind xtream.Kind, account string, priority int, stream *xtream.Stream, names map[string]string, stats *Stats) *row {
+func (b *Builder) row(kind xtream.Kind, account string, priority int, stream *xtream.Stream, names map[string]providerCategory, stats *Stats) *row {
 	name := strings.TrimSpace(string(stream.Name))
 	id := stream.Identifier(kind)
 	if name == "" || id == "" {
 		return nil
 	}
-	category := categoryOf(names, stream)
+	listed := categoryOf(names, stream)
+	category := listed.name
 	foldedCategory, foldedName := fold(category), fold(name)
 	r := &row{account: account, priority: priority, stream: stream, id: id, name: name}
 	r.blocked = b.filters.blocksContent(foldedCategory, foldedName, string(stream.IsAdult) == "1")
@@ -198,6 +213,7 @@ func (b *Builder) row(kind xtream.Kind, account string, priority int, stream *xt
 	r.poster = b.names.posterKey(stream.Artwork(kind))
 	r.categoryOrigin = b.categories[kind].origin(category)
 	r.categoryKey, r.categoryShown = b.categories[kind].identify(category)
+	r.categoryPosition = listed.position
 	r.score, r.label = evaluateTraits(b.traits, foldedName+" | "+foldedCategory)
 	return r
 }
@@ -330,7 +346,7 @@ func fillMetadata(t *Title, kind xtream.Kind, s *xtream.Stream) {
 }
 
 func (b *Builder) displayName(kind xtream.Kind, best *row, year int) string {
-	if kind == xtream.Live {
+	if kind == xtream.Live || b.cfg.OriginalNames {
 		return best.name
 	}
 	name := b.names.display(best.name, year)
@@ -346,9 +362,10 @@ func (b *Builder) displayName(kind xtream.Kind, best *row, year int) string {
 func (b *Builder) registerCategory(kind xtream.Kind, r *row, categories map[string]*categoryTally) int64 {
 	entry := categories[r.categoryKey]
 	if entry == nil {
-		entry = &categoryTally{id: b.ids.Assign(fmt.Sprintf("category|%s|%s", kind, r.categoryKey))}
+		entry = &categoryTally{id: b.ids.Assign(fmt.Sprintf("category|%s|%s", kind, r.categoryKey)), position: r.categoryPosition}
 		categories[r.categoryKey] = entry
 	}
+	entry.position = min(entry.position, r.categoryPosition)
 	entry.shown = preferredSpelling(entry.shown, r.categoryShown)
 	entry.count++
 	return entry.id
@@ -373,7 +390,7 @@ func (b *Builder) orderCategories(kind xtream.Kind, categories map[string]*categ
 	for key := range categories {
 		keys = append(keys, key)
 	}
-	b.categories[kind].sortKeys(keys)
+	b.categories[kind].sortKeys(keys, func(key string) int { return categories[key].position })
 	ordered := make([]*Category, 0, len(keys))
 	for _, key := range keys {
 		entry := categories[key]
