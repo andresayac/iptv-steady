@@ -18,6 +18,8 @@ const (
 	Password = "provider-secret"
 
 	writeStep         = 8 << 10
+	crawlEvery        = 100 * time.Millisecond
+	gapLasts          = 400 * time.Millisecond
 	trickleEvery      = 20 * time.Millisecond
 	livePacket        = 188
 	livePackets       = 7
@@ -38,6 +40,10 @@ const (
 	EmptyBody
 	// Trickle sends almost nothing once the offset is reached.
 	Trickle
+	// Crawl keeps sending at a modest pace once the offset is reached, slower than playback but not dead.
+	Crawl
+	// Gap goes silent for a moment once the offset is reached, then continues normally.
+	Gap
 	// ErrorPage answers 200 with an HTML page, as offline channels on real panels do.
 	ErrorPage
 	// Playlist answers an HLS playlist instead of a transport stream.
@@ -335,6 +341,34 @@ func misbehave(w http.ResponseWriter, r *http.Request, rest []byte, kind FaultKi
 				return
 			}
 			flush(w)
+		}
+	case Crawl:
+		for len(rest) > 0 {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(crawlEvery):
+			}
+			step := min(writeStep, len(rest))
+			if _, err := w.Write(rest[:step]); err != nil {
+				return
+			}
+			flush(w)
+			rest = rest[step:]
+		}
+	case Gap:
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(gapLasts):
+		}
+		for len(rest) > 0 {
+			step := min(writeStep, len(rest))
+			if _, err := w.Write(rest[:step]); err != nil {
+				return
+			}
+			flush(w)
+			rest = rest[step:]
 		}
 	}
 }

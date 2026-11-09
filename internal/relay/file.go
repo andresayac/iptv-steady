@@ -10,16 +10,25 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"iptv-steady/internal/events"
 )
 
-// fileSession serves one HTTP request for a movie or an episode. After start, its state belongs to the pump goroutine.
+const (
+	waitingToStart    = "waiting for the first data"
+	waitingToContinue = "waiting for more data"
+)
+
+// fileSession serves one HTTP request for a movie or an episode. After start, its state belongs to the pump goroutine, except what the viewer side reads: queue, arrived, firstByte and serving.
 type fileSession struct {
 	playback
-	want  byteRange
-	queue *queue
+	want      byteRange
+	queue     *queue
+	arrived   time.Time
+	firstByte int64
+	serving   atomic.Pointer[Source]
 
 	source      Source
 	contentType string
@@ -32,6 +41,8 @@ type fileSession struct {
 	episodeStart  time.Time
 	attempts      int
 	sinceRecovery int64
+	gauge         reserveGauge
+	replacedAt    time.Time
 }
 
 func (e *Engine) ServeFile(w http.ResponseWriter, r *http.Request, viewer Viewer, media Media) {
@@ -41,7 +52,9 @@ func (e *Engine) ServeFile(w http.ResponseWriter, r *http.Request, viewer Viewer
 		playback:     playback{engine: e, viewer: viewer, media: media},
 		want:         parseRange(r.Header.Get("Range")),
 		queue:        newQueue(int64(e.file.ReadAhead)),
+		arrived:      time.Now(),
 		notIdentical: map[Source]bool{},
+		gauge:        reserveGauge{cfg: e.file.Reserve, window: e.file.SlowWindow},
 	}
 	up, err := s.start(ctx)
 	if err != nil {
@@ -84,6 +97,9 @@ func (s *fileSession) start(ctx context.Context) (*upstream, error) {
 			return nil, ctx.Err()
 		}
 		for _, source := range e.ordered(s.media, preferred) {
+			if mustMatch && e.holdsOtherFile(s.media.Kind, source, bound.total) {
+				continue
+			}
 			up, err := e.open(ctx, s.firstRequest(source))
 			if err == nil && mustMatch && up.total != bound.total {
 				up.close()
@@ -123,6 +139,8 @@ func (s *fileSession) noteOpenFailure(source Source, err error) {
 func (s *fileSession) adopt(up *upstream) {
 	s.source, s.contentType = up.source, up.contentType
 	s.position, s.end, s.total = up.start, up.end, up.total
+	s.firstByte = up.start
+	s.serving.Store(&up.source)
 	if s.want.end >= 0 && (s.end < 0 || s.want.end < s.end) {
 		s.end = s.want.end
 	}
@@ -169,8 +187,10 @@ func (s *fileSession) resolvedContentType() string {
 // deliver writes buffered data to the viewer and reports whether the stream ended in failure.
 func (s *fileSession) deliver(ctx context.Context, w http.ResponseWriter) bool {
 	controller := http.NewResponseController(w)
+	waiting, offset, activity := s.arrived, s.firstByte, waitingToStart
 	for {
 		chunk, err := s.queue.pop(ctx)
+		s.noteWait(time.Since(waiting), offset, activity)
 		if errors.Is(err, io.EOF) {
 			return false
 		}
@@ -182,13 +202,23 @@ func (s *fileSession) deliver(ctx context.Context, w http.ResponseWriter) bool {
 			return false
 		}
 		_ = controller.Flush()
+		waiting, offset, activity = time.Now(), offset+int64(len(chunk)), waitingToContinue
 	}
+}
+
+func (s *fileSession) noteWait(waited time.Duration, offset int64, activity string) {
+	if waited < s.engine.file.StarvedAfter {
+		return
+	}
+	s.record(events.Event{Kind: events.Starved, Account: s.serving.Load().Account, Position: offset, DowntimeMS: waited.Milliseconds(), Detail: activity})
 }
 
 func (s *fileSession) pump(ctx context.Context, up *upstream) {
 	for {
+		from := s.position
 		err := s.transfer(ctx, up)
 		up.close()
+		s.recordServed(up.source.Account, s.position-from)
 		if err == nil || ctx.Err() != nil {
 			s.queue.finish(ctx.Err())
 			return
@@ -227,6 +257,7 @@ func (s *fileSession) transfer(ctx context.Context, up *upstream) error {
 	cfg := s.engine.file
 	buffer := make([]byte, cfg.ChunkSize)
 	detector := slowDetector{window: cfg.SlowWindow, minRate: float64(cfg.SlowMinRate)}
+	s.gauge.restart(time.Now(), s.queue.buffered())
 	for !s.finished() {
 		switch s.queue.waitRoom(ctx, cfg.ParkAfter) {
 		case roomTimedOut:
@@ -234,8 +265,9 @@ func (s *fileSession) transfer(ctx context.Context, up *upstream) error {
 		case roomCancelled:
 			return ctx.Err()
 		}
+		timeout := s.gauge.stallTimeout(s.queue.buffered(), cfg.StallTimeout)
 		began := time.Now()
-		n, err := up.read(buffer, cfg.StallTimeout)
+		n, err := up.read(buffer, timeout)
 		if n > 0 {
 			s.accept(buffer[:n])
 		}
@@ -246,11 +278,22 @@ func (s *fileSession) transfer(ctx context.Context, up *upstream) error {
 			return nil
 		case err != nil:
 			return classifyRead(err)
-		case detector.add(n, time.Since(began)):
+		case timeout <= cfg.StallTimeout && detector.add(n, time.Since(began)):
 			return errSlow
+		case s.fellBehind(n):
+			return errBehind
 		}
 	}
 	return nil
+}
+
+// fellBehind allows replacing a connection that cannot keep up with the viewer, at most once per cooldown so a slow provider is not hammered.
+func (s *fileSession) fellBehind(received int) bool {
+	if !s.gauge.observe(time.Now(), received, s.queue.buffered()) || time.Since(s.replacedAt) < s.engine.file.Reserve.ReplaceCooldown {
+		return false
+	}
+	s.replacedAt = time.Now()
+	return true
 }
 
 func classifyRead(err error) error {
@@ -343,7 +386,7 @@ func (s *fileSession) recover(ctx context.Context, cause error) (*upstream, erro
 func (s *fileSession) recoveryOrder() []Source {
 	order := slices.Repeat([]Source{s.source}, s.engine.file.RetriesPerCopy)
 	for _, source := range s.engine.ordered(s.media, nil) {
-		if source != s.source && !s.notIdentical[source] {
+		if source != s.source && !s.notIdentical[source] && !s.engine.holdsOtherFile(s.media.Kind, source, s.total) {
 			order = append(order, source)
 		}
 	}
@@ -405,6 +448,7 @@ func (s *fileSession) resumed(up *upstream, cause error, began time.Time) {
 	if up.source != s.source {
 		s.record(events.Event{Kind: events.SwitchedCopy, Account: up.source.Account, Position: s.position, Detail: "from " + s.source.Account})
 		s.source, s.attempts = up.source, 0
+		s.serving.Store(&up.source)
 		s.engine.bindings.Set(s.bindingKey(), binding{up.source, s.total}, s.engine.file.StickyTTL)
 	}
 	s.sinceRecovery = 0

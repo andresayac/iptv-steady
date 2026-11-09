@@ -33,6 +33,11 @@ func Config(t testing.TB, panels ...*Panel) *config.Config {
 		File: config.File{
 			ReadAhead: 256 << 10, ChunkSize: 16 << 10, OpenTimeout: 500 * time.Millisecond, ReopenTimeout: 300 * time.Millisecond, OpenPasses: 1, StallTimeout: 150 * time.Millisecond,
 			SlowWindow: 400 * time.Millisecond, SlowMinRate: 32 << 10, RetriesPerCopy: 2, RetryDelays: []time.Duration{0, 20 * time.Millisecond},
+			Reserve: config.Reserve{
+				Empty: 10 * time.Millisecond, Low: 20 * time.Millisecond, Full: time.Minute,
+				EmptyStallTimeout: 150 * time.Millisecond, FullStallTimeout: 150 * time.Millisecond, MinSupply: 0.8, ReplaceCooldown: time.Minute,
+			},
+			StarvedAfter:   100 * time.Millisecond,
 			RecoveryBudget: 1500 * time.Millisecond, ProgressBytes: 64 << 10, ParkAfter: 200 * time.Millisecond, ClientIdleTimeout: 10 * time.Second,
 			TailCheck: 16 << 10, StickyTTL: time.Hour, DeadLinkTTL: time.Hour, CacheEntries: 100,
 		},

@@ -45,7 +45,7 @@ IPTV Steady does that reload for you, in seconds, from the exact byte the player
 When a provider misbehaves during a movie:
 
 1. The server has already downloaded ahead of the player, up to `file.read_ahead` per stream.
-2. If the provider sends nothing for `file.stall_timeout`, or crawls below `file.slow_min_rate`, the connection is dropped and reopened at the exact next byte. The player keeps consuming the buffer.
+2. If the provider sends nothing for `file.stall_timeout`, crawls below `file.slow_min_rate`, or falls behind the player with little video left, the connection is dropped and reopened at the exact next byte. The player keeps consuming the buffer. How long silence is tolerated follows the buffer: less when it is almost empty, more when it is full.
 3. If that account keeps failing, playback continues on another account whose file has the same size and matches the last bytes delivered.
 4. Without an identical copy, the proxy keeps trying for `file.recovery_budget` and then closes the stream, so the player shows an error instead of hanging forever.
 
@@ -123,13 +123,15 @@ If your app only takes a playlist, use `http://your-server:8095/get.php?username
 The report groups interruptions and repairs by hour, account and player. Example:
 
 ```text
-Events: 18, interruptions: 7, recovered: 7, gave up: 0, dead links: 2
+Events: 18, interruptions: 7, recovered: 7, gave up: 0, dead links: 2, pauses: 1
 
 Hour
-       interrupted  recovered  gave up  dead links  avg recovery ms
-21:00  5            5          0        1           812
-22:00  2            2          0        1           640
+       interrupted  recovered  gave up  dead links  avg recovery ms  pauses  paused s  GB   interrupted/GB
+21:00  5            5          0        1           812              1       4         2.6  1.9
+22:00  2            2          0        1           640              0       0         1.4  1.4
 ```
+
+An interruption is a problem with the provider, and most are repaired without the viewer noticing. A pause is time the player spent waiting with nothing left to receive. `interrupted/GB` compares accounts fairly, whichever one carries the most traffic.
 
 | Command | Purpose |
 |---|---|
@@ -165,7 +167,7 @@ Put a reverse proxy in front for HTTPS, set `PUBLIC_URL` and bind `LISTEN` to lo
 
 | Section | Controls |
 |---|---|
-| `file` | Movies and episodes: read-ahead, stall detection, retries, recovery budget |
+| `file` | Movies and episodes: read-ahead, stall detection, reactions by buffered video, retries, recovery budget |
 | `live` | Channels: stall detection and reconnection |
 | `upstream` | Timeouts, account polling, circuit breaker |
 | `catalog.filters` | What to hide. Adult content is blocked by default |

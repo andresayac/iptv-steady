@@ -37,6 +37,29 @@ func TestJournalRoundTripAndReport(t *testing.T) {
 	}
 }
 
+func TestReportCountsPausesAndInterruptionsPerGigabyte(t *testing.T) {
+	moment := time.Date(2026, 11, 8, 22, 5, 0, 0, time.Local)
+	recorded := []Event{
+		{Time: moment, Kind: Stalled, Account: "one"},
+		{Time: moment, Kind: Stalled, Account: "one"},
+		{Time: moment, Kind: Starved, Account: "one", DowntimeMS: 21_000},
+		{Time: moment, Kind: Served, Account: "one", Bytes: 4_000_000_000},
+		{Time: moment, Kind: Stalled, Account: "two"},
+	}
+	var out bytes.Buffer
+	if err := WriteReport(&out, recorded); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "Events: 4, interruptions: 3, recovered: 0, gave up: 0, dead links: 0, pauses: 1\n") {
+		t.Fatalf("a served connection must not count as an event:\n%s", out.String())
+	}
+	for _, want := range []string{"1       21        4.0  0.5", "0       0         0.0  -"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("report lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestReadIgnoresOlderEvents(t *testing.T) {
 	dir := t.TempDir()
 	journal, err := Open(dir, 30)

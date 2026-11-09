@@ -55,6 +55,19 @@ file:
   stall_timeout: 5s
   slow_window: 10s
   slow_min_rate: 32KiB
+  # The reaction depends on the seconds of video already waiting for the viewer.
+  reserve:
+    empty: 3s
+    low: 30s
+    full: 60s
+    # Silence tolerated near those marks; in between, stall_timeout applies.
+    empty_stall_timeout: 3s
+    full_stall_timeout: 15s
+    # Below the low mark, replace a connection supplying less than this share of what the viewer consumes.
+    min_supply: 0.8
+    replace_cooldown: 30s
+  # A viewer waiting this long with nothing to receive is reported as a pause.
+  starved_after: 2s
   retries_per_copy: 1
   retry_delays: [0s, 500ms, 1s, 2s]
   recovery_budget: 45s

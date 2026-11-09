@@ -54,6 +54,16 @@ func TestUnknownCategorySectionIsRejected(t *testing.T) {
 	}
 }
 
+func TestReserveMarksMustBeOrdered(t *testing.T) {
+	cfg := &Config{File: File{Reserve: Reserve{Empty: 30, Low: 3, Full: 60, MinSupply: 1.5}}}
+	err := cfg.Validate()
+	for _, want := range []string{"file.reserve needs empty < low < full", "file.reserve.min_supply must be above 0 and at most 1"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("error should mention %q: %v", want, err)
+		}
+	}
+}
+
 func TestEnvFileNeverOverridesTheEnvironment(t *testing.T) {
 	t.Setenv("KEPT_VALUE", "from-environment")
 	path := writeFile(t, ".env", "# comment\nKEPT_VALUE=from-file\nNEW_VALUE=\"quoted\"\n")

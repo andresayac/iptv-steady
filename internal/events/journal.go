@@ -25,6 +25,10 @@ const (
 	Recovered    Kind = "recovered"
 	SwitchedCopy Kind = "switched_copy"
 	GaveUp       Kind = "gave_up"
+	// Starved means the viewer waited with nothing left to receive.
+	Starved Kind = "starved"
+	// Served closes a provider connection and carries the bytes it delivered.
+	Served Kind = "served"
 )
 
 type Event struct {
@@ -39,6 +43,7 @@ type Event struct {
 	Position   int64     `json:"position,omitempty"`
 	Buffered   int64     `json:"buffered,omitempty"`
 	DowntimeMS int64     `json:"downtime_ms,omitempty"`
+	Bytes      int64     `json:"bytes,omitempty"`
 	Detail     string    `json:"detail,omitempty"`
 }
 

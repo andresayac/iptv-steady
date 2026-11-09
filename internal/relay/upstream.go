@@ -21,6 +21,7 @@ import (
 var (
 	errStalled       = errors.New("provider stopped sending data")
 	errSlow          = errors.New("provider is too slow")
+	errBehind        = fmt.Errorf("%w: it supplies less than the viewer consumes", errSlow)
 	errDropped       = errors.New("provider closed the connection early")
 	errParked        = errors.New("upstream released while the viewer is paused")
 	errDeadLink      = errors.New("link is dead")
@@ -128,6 +129,7 @@ func (e *Engine) open(ctx context.Context, request openRequest) (*upstream, erro
 	}
 	u.timer.Stop()
 	account.Succeeded()
+	e.rememberSize(request.kind, request.source, u.total)
 	return u, nil
 }
 

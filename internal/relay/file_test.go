@@ -115,6 +115,30 @@ func (s *stand) fetch(method, rangeHeader string) result {
 	return result{response.StatusCode, response.Header, body, readErr, time.Since(started)}
 }
 
+// fetchPaced reads like a player does, a little at a time, so the buffer ahead of it has room to fill.
+func (s *stand) fetchPaced() result {
+	s.t.Helper()
+	started := time.Now()
+	response, err := http.Get(s.front.URL)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var body []byte
+	chunk := make([]byte, 16<<10)
+	for {
+		n, err := response.Body.Read(chunk)
+		body = append(body, chunk[:n]...)
+		if err == io.EOF {
+			return result{response.StatusCode, response.Header, body, nil, time.Since(started)}
+		}
+		if err != nil {
+			return result{response.StatusCode, response.Header, body, err, time.Since(started)}
+		}
+		time.Sleep(4 * time.Millisecond)
+	}
+}
+
 func eventually(t *testing.T, what string, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -191,6 +215,147 @@ func TestTrickleCountsAsStall(t *testing.T) {
 
 	requireIntact(t, s.fetch(http.MethodGet, ""), content)
 	requireKinds(t, s.recorder, events.Slow, events.Recovered)
+}
+
+func TestViewerWithNoReserveIsRepairedSooner(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	panel.Inject(panel.AddMovie("10", "mp4", content), testkit.Fault{Kind: testkit.Stall, At: 1 << 20})
+	s := newStand(t, func(cfg *config.Config) {
+		cfg.File.StallTimeout, cfg.File.Reserve.EmptyStallTimeout = 10*time.Second, 100*time.Millisecond
+	}, movie(source(0, "10", "mp4")), panel)
+
+	got := s.fetch(http.MethodGet, "")
+
+	requireIntact(t, got, content)
+	if got.elapsed > 3*time.Second {
+		t.Fatalf("waited %s; the shorter timeout for an empty reserve did not apply", got.elapsed)
+	}
+}
+
+func TestFullReserveWaitsOutAShortSilence(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	path := panel.AddMovie("10", "mp4", content)
+	panel.Inject(path, testkit.Fault{Kind: testkit.Gap, At: 1 << 20})
+	s := newStand(t, func(cfg *config.Config) {
+		cfg.File.StallTimeout, cfg.File.Reserve.FullStallTimeout = 50*time.Millisecond, 3*time.Second
+		cfg.File.Reserve.EmptyStallTimeout = time.Second
+		cfg.File.SlowWindow, cfg.File.SlowMinRate = 80*time.Millisecond, 1<<30
+		cfg.File.Reserve.Empty, cfg.File.Reserve.Low, cfg.File.Reserve.Full = time.Millisecond, 2*time.Millisecond, 10*time.Millisecond
+		cfg.File.Reserve.MinSupply = 0.001
+	}, movie(source(0, "10", "mp4")), panel)
+
+	requireIntact(t, s.fetchPaced(), content)
+
+	if requests := panel.Requests(path); len(requests) != 1 {
+		t.Fatalf("events = %v, requests = %+v; a full reserve should have waited for the provider", s.recorder.kinds(), requests)
+	}
+}
+
+func TestProviderSlowerThanTheViewerIsReplaced(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	path := panel.AddMovie("10", "mp4", content)
+	panel.Inject(path, testkit.Fault{Kind: testkit.Crawl, At: 1 << 19})
+	s := newStand(t, func(cfg *config.Config) {
+		cfg.File.StallTimeout, cfg.File.Reserve.EmptyStallTimeout = 2*time.Second, 2*time.Second
+		cfg.File.SlowWindow, cfg.File.Reserve.Low = 80*time.Millisecond, time.Hour
+		cfg.File.Reserve.Full = 2 * time.Hour
+	}, movie(source(0, "10", "mp4")), panel)
+
+	requireIntact(t, s.fetchPaced(), content)
+
+	if len(panel.Requests(path)) < 2 {
+		t.Fatalf("events = %v; the slow connection was never replaced", s.recorder.kinds())
+	}
+	found := slices.ContainsFunc(s.recorder.all(), func(event events.Event) bool {
+		return event.Kind == events.Slow && strings.Contains(event.Detail, "less than the viewer consumes")
+	})
+	if !found {
+		t.Fatalf("events = %v; missing a slow event for falling behind", s.recorder.kinds())
+	}
+}
+
+func TestWaitsWithNothingToReceiveAreRecorded(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	const stallAt = 1 << 20
+	panel.Inject(panel.AddMovie("10", "mp4", content), testkit.Fault{Kind: testkit.Stall, At: stallAt})
+	s := newStand(t, nil, movie(source(0, "10", "mp4")), panel)
+
+	requireIntact(t, s.fetch(http.MethodGet, ""), content)
+
+	var pauses []events.Event
+	for _, event := range s.recorder.all() {
+		if event.Kind == events.Starved {
+			pauses = append(pauses, event)
+		}
+	}
+	if len(pauses) != 1 {
+		t.Fatalf("pauses = %+v; want the one caused by the stall", pauses)
+	}
+	if pause := pauses[0]; pause.DowntimeMS < 100 || pause.Position != stallAt || pause.Account != testkit.AccountName(0) || pause.Detail == "" {
+		t.Fatalf("pause = %+v", pause)
+	}
+}
+
+func TestSlowFirstAnswerCountsAsAWait(t *testing.T) {
+	first, second := testkit.NewPanel(t), testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	first.Always(first.AddMovie("10", "mp4", content), testkit.Fault{Kind: testkit.Stall, At: 0})
+	second.AddMovie("20", "mp4", content)
+	s := newStand(t, nil, movie(source(0, "10", "mp4"), source(1, "20", "mp4")), first, second)
+
+	requireIntact(t, s.fetch(http.MethodGet, ""), content)
+
+	requireKinds(t, s.recorder, events.Starved)
+}
+
+func TestServedBytesAreCountedPerConnection(t *testing.T) {
+	panel := testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	panel.Inject(panel.AddMovie("10", "mp4", content), testkit.Fault{Kind: testkit.Cut, At: 700_000})
+	s := newStand(t, nil, movie(source(0, "10", "mp4")), panel)
+
+	requireIntact(t, s.fetch(http.MethodGet, ""), content)
+
+	eventually(t, "every connection to report its bytes", func() bool {
+		var total int64
+		for _, event := range s.recorder.all() {
+			if event.Kind == events.Served {
+				total += event.Bytes
+			}
+		}
+		return total == fileSize
+	})
+}
+
+func TestCopyKnownToDifferIsNotAskedAgain(t *testing.T) {
+	first, second := testkit.NewPanel(t), testkit.NewPanel(t)
+	content := testkit.Content(fileSize)
+	firstPath := first.AddMovie("10", "mp4", content)
+	secondPath := second.AddMovie("20", "mp4", testkit.Content(fileSize/2))
+	s := newStand(t, nil, movie(source(0, "10", "mp4"), source(1, "20", "mp4")), first, second)
+	requireIntact(t, s.fetch(http.MethodGet, "bytes=0-1000"), content[:1001])
+	first.Inject(firstPath, testkit.Fault{Kind: testkit.Status, Code: http.StatusServiceUnavailable})
+
+	if got := s.fetch(http.MethodGet, "bytes=500000-501000"); got.status != http.StatusBadGateway {
+		t.Fatalf("status = %d", got.status)
+	}
+	askedOnce := len(second.Requests(secondPath))
+	if askedOnce != 1 {
+		t.Fatalf("the other copy was opened %d times; its size is learned once", askedOnce)
+	}
+
+	first.Inject(firstPath, testkit.Fault{Kind: testkit.Status, Code: http.StatusServiceUnavailable})
+	if got := s.fetch(http.MethodGet, "bytes=600000-601000"); got.status != http.StatusBadGateway {
+		t.Fatalf("status = %d", got.status)
+	}
+
+	if asked := len(second.Requests(secondPath)); asked != askedOnce {
+		t.Fatalf("a copy already known to differ was opened again, %d times in total", asked)
+	}
 }
 
 func TestUnusableLinksFallThroughToNextAccount(t *testing.T) {

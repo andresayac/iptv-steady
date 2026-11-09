@@ -47,8 +47,9 @@ func (e *Engine) ServeLive(w http.ResponseWriter, r *http.Request, viewer Viewer
 	w.WriteHeader(http.StatusOK)
 	for {
 		opened := time.Now()
-		err := s.forward(ctx, w, up)
+		relayed, err := s.forward(ctx, w, up)
 		up.close()
+		s.recordServed(up.source.Account, relayed)
 		if ctx.Err() != nil || errors.Is(err, errClientGone) {
 			return
 		}
@@ -130,23 +131,25 @@ func (s *liveSession) order() []Source {
 	return order
 }
 
-func (s *liveSession) forward(ctx context.Context, w http.ResponseWriter, up *upstream) error {
+func (s *liveSession) forward(ctx context.Context, w http.ResponseWriter, up *upstream) (int64, error) {
 	cfg := s.engine.live
 	controller := http.NewResponseController(w)
 	buffer := make([]byte, cfg.ChunkSize)
+	var relayed int64
 	for {
 		n, err := up.read(buffer, cfg.StallTimeout)
 		if n > 0 {
 			if _, writeErr := w.Write(buffer[:n]); writeErr != nil {
-				return errClientGone
+				return relayed, errClientGone
 			}
 			_ = controller.Flush()
+			relayed += int64(n)
 		}
 		if err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return relayed, ctx.Err()
 			}
-			return classifyRead(err)
+			return relayed, classifyRead(err)
 		}
 	}
 }

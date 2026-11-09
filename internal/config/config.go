@@ -81,6 +81,8 @@ type File struct {
 	StallTimeout      time.Duration   `yaml:"stall_timeout"`
 	SlowWindow        time.Duration   `yaml:"slow_window"`
 	SlowMinRate       ByteSize        `yaml:"slow_min_rate"`
+	Reserve           Reserve         `yaml:"reserve"`
+	StarvedAfter      time.Duration   `yaml:"starved_after"`
 	RetriesPerCopy    int             `yaml:"retries_per_copy"`
 	RetryDelays       []time.Duration `yaml:"retry_delays"`
 	RecoveryBudget    time.Duration   `yaml:"recovery_budget"`
@@ -91,6 +93,17 @@ type File struct {
 	StickyTTL         time.Duration   `yaml:"sticky_ttl"`
 	DeadLinkTTL       time.Duration   `yaml:"dead_link_ttl"`
 	CacheEntries      int             `yaml:"cache_entries"`
+}
+
+// Reserve adapts the reaction to a provider to the seconds of video already waiting for the viewer.
+type Reserve struct {
+	Empty             time.Duration `yaml:"empty"`
+	Low               time.Duration `yaml:"low"`
+	Full              time.Duration `yaml:"full"`
+	EmptyStallTimeout time.Duration `yaml:"empty_stall_timeout"`
+	FullStallTimeout  time.Duration `yaml:"full_stall_timeout"`
+	MinSupply         float64       `yaml:"min_supply"`
+	ReplaceCooldown   time.Duration `yaml:"replace_cooldown"`
 }
 
 type Live struct {
@@ -279,6 +292,9 @@ func (c *Config) Validate() error {
 	for section := range c.Catalog.Categories.Sections {
 		p.require(slices.Contains(knownSections, section), "catalog.categories.sections has an unknown section %q", section)
 	}
+	reserve := c.File.Reserve
+	p.require(reserve.Empty < reserve.Low && reserve.Low < reserve.Full, "file.reserve needs empty < low < full")
+	p.require(reserve.MinSupply > 0 && reserve.MinSupply <= 1, "file.reserve.min_supply must be above 0 and at most 1")
 	p.positive(c.timeouts())
 	p.positive(c.sizes())
 	if len(p) == 0 {
@@ -290,37 +306,42 @@ func (c *Config) Validate() error {
 
 func (c *Config) timeouts() map[string]int64 {
 	durations := map[string]time.Duration{
-		"server.read_header_timeout":      c.Server.ReadHeaderTimeout,
-		"server.idle_timeout":             c.Server.IdleTimeout,
-		"server.shutdown_timeout":         c.Server.ShutdownTimeout,
-		"upstream.connect_timeout":        c.Upstream.ConnectTimeout,
-		"upstream.tcp_keepalive":          c.Upstream.TCPKeepAlive,
-		"upstream.tls_timeout":            c.Upstream.TLSTimeout,
-		"upstream.header_timeout":         c.Upstream.HeaderTimeout,
-		"upstream.catalog_timeout":        c.Upstream.CatalogTimeout,
-		"upstream.catalog_header_timeout": c.Upstream.CatalogHeaderTimeout,
-		"upstream.status_interval":        c.Upstream.StatusInterval,
-		"upstream.status_timeout":         c.Upstream.StatusTimeout,
-		"upstream.status_max_backoff":     c.Upstream.StatusMaxBackoff,
-		"upstream.breaker_cooldown":       c.Upstream.BreakerCooldown,
-		"sync.interval":                   c.Sync.Interval,
-		"file.open_timeout":               c.File.OpenTimeout,
-		"file.reopen_timeout":             c.File.ReopenTimeout,
-		"file.stall_timeout":              c.File.StallTimeout,
-		"file.slow_window":                c.File.SlowWindow,
-		"file.recovery_budget":            c.File.RecoveryBudget,
-		"file.park_after":                 c.File.ParkAfter,
-		"file.client_idle_timeout":        c.File.ClientIdleTimeout,
-		"file.sticky_ttl":                 c.File.StickyTTL,
-		"file.dead_link_ttl":              c.File.DeadLinkTTL,
-		"live.open_timeout":               c.Live.OpenTimeout,
-		"live.stall_timeout":              c.Live.StallTimeout,
-		"live.reconnect_budget":           c.Live.ReconnectBudget,
-		"live.healthy_after":              c.Live.HealthyAfter,
-		"details.vod_timeout":             c.Details.VODTimeout,
-		"details.series_timeout":          c.Details.SeriesTimeout,
-		"details.vod_ttl":                 c.Details.VODTTL,
-		"details.series_ttl":              c.Details.SeriesTTL,
+		"server.read_header_timeout":       c.Server.ReadHeaderTimeout,
+		"server.idle_timeout":              c.Server.IdleTimeout,
+		"server.shutdown_timeout":          c.Server.ShutdownTimeout,
+		"upstream.connect_timeout":         c.Upstream.ConnectTimeout,
+		"upstream.tcp_keepalive":           c.Upstream.TCPKeepAlive,
+		"upstream.tls_timeout":             c.Upstream.TLSTimeout,
+		"upstream.header_timeout":          c.Upstream.HeaderTimeout,
+		"upstream.catalog_timeout":         c.Upstream.CatalogTimeout,
+		"upstream.catalog_header_timeout":  c.Upstream.CatalogHeaderTimeout,
+		"upstream.status_interval":         c.Upstream.StatusInterval,
+		"upstream.status_timeout":          c.Upstream.StatusTimeout,
+		"upstream.status_max_backoff":      c.Upstream.StatusMaxBackoff,
+		"upstream.breaker_cooldown":        c.Upstream.BreakerCooldown,
+		"sync.interval":                    c.Sync.Interval,
+		"file.open_timeout":                c.File.OpenTimeout,
+		"file.reopen_timeout":              c.File.ReopenTimeout,
+		"file.stall_timeout":               c.File.StallTimeout,
+		"file.slow_window":                 c.File.SlowWindow,
+		"file.reserve.empty":               c.File.Reserve.Empty,
+		"file.reserve.empty_stall_timeout": c.File.Reserve.EmptyStallTimeout,
+		"file.reserve.full_stall_timeout":  c.File.Reserve.FullStallTimeout,
+		"file.reserve.replace_cooldown":    c.File.Reserve.ReplaceCooldown,
+		"file.starved_after":               c.File.StarvedAfter,
+		"file.recovery_budget":             c.File.RecoveryBudget,
+		"file.park_after":                  c.File.ParkAfter,
+		"file.client_idle_timeout":         c.File.ClientIdleTimeout,
+		"file.sticky_ttl":                  c.File.StickyTTL,
+		"file.dead_link_ttl":               c.File.DeadLinkTTL,
+		"live.open_timeout":                c.Live.OpenTimeout,
+		"live.stall_timeout":               c.Live.StallTimeout,
+		"live.reconnect_budget":            c.Live.ReconnectBudget,
+		"live.healthy_after":               c.Live.HealthyAfter,
+		"details.vod_timeout":              c.Details.VODTimeout,
+		"details.series_timeout":           c.Details.SeriesTimeout,
+		"details.vod_ttl":                  c.Details.VODTTL,
+		"details.series_ttl":               c.Details.SeriesTTL,
 	}
 	out := make(map[string]int64, len(durations))
 	for name, value := range durations {
