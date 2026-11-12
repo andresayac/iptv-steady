@@ -245,6 +245,53 @@ func TestDeadLinkMovesToTheSameTitleOnAnotherAccount(t *testing.T) {
 	}
 }
 
+func TestBrowsersMayReadListsAndPiecesOfFiles(t *testing.T) {
+	content := testkit.Content(1 << 16)
+	panel, _ := libraryPanel(t, "10", content)
+	s := newStand(t, panel)
+	s.sync()
+
+	_, header, _ := s.get(s.api("get_vod_streams"))
+	if header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("lists: allow origin = %q", header.Get("Access-Control-Allow-Origin"))
+	}
+
+	movie := s.streamURL("movie", id(s.rows("get_vod_streams")[0]["stream_id"]), "mp4")
+	preflight, err := http.NewRequest(http.MethodOptions, movie, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight.Header.Set("Origin", "http://player.example")
+	preflight.Header.Set("Access-Control-Request-Method", "GET")
+	preflight.Header.Set("Access-Control-Request-Headers", "range")
+	answer, err := http.DefaultClient.Do(preflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer.Body.Close()
+	if answer.StatusCode != http.StatusNoContent || !strings.Contains(answer.Header.Get("Access-Control-Allow-Headers"), "Range") {
+		t.Fatalf("preflight: %d, allow headers %q", answer.StatusCode, answer.Header.Get("Access-Control-Allow-Headers"))
+	}
+
+	piece, err := http.NewRequest(http.MethodGet, movie, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	piece.Header.Set("Range", "bytes=100-199")
+	response, err := http.DefaultClient.Do(piece)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusPartialContent || !bytes.Equal(body, content[100:200]) {
+		t.Fatalf("piece: %d, %d bytes", response.StatusCode, len(body))
+	}
+	if !strings.Contains(response.Header.Get("Access-Control-Expose-Headers"), "Content-Range") {
+		t.Fatalf("piece: expose headers %q", response.Header.Get("Access-Control-Expose-Headers"))
+	}
+}
+
 func TestStreamsRequireValidCredentialsAndKnownTitles(t *testing.T) {
 	panel, _ := libraryPanel(t, "10", testkit.Content(1024))
 	s := newStand(t, panel)

@@ -46,7 +46,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/live/{user}/{password}/{file}", s.play(xtream.Live))
 	mux.HandleFunc("/{user}/{password}/{file}", s.play(xtream.Live))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
-	return mux
+	return allowBrowsers(mux)
+}
+
+// allowBrowsers lets a player that runs in a web page use the proxy. Such a player reads the
+// lists and the files itself, from a page served from another address, and the browser hands
+// it the answer only when the answer says any page may read it. A film is read in pieces with
+// Range, and the player needs to see where each piece sits (Content-Range) and how long the
+// file is. Credentials travel in the address, never in cookies, so allowing every origin gives
+// a page nothing it could not already ask for.
+func allowBrowsers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := w.Header()
+		header.Set("Access-Control-Allow-Origin", "*")
+		header.Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range, Content-Type, ETag")
+		// The browser's question before a request it may not send unasked: a Range with more
+		// than one piece, or a player that names itself (Firefox lets a page set User-Agent)
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			header.Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+			header.Set("Access-Control-Allow-Headers", "Range, If-None-Match, Accept-Encoding, User-Agent")
+			header.Set("Access-Control-Max-Age", "86400")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Run(ctx context.Context) error {
